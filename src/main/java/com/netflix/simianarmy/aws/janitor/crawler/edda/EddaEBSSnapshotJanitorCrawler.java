@@ -1,20 +1,3 @@
-/*
- *
- *  Copyright 2012 Netflix, Inc.
- *
- *     Licensed under the Apache License, Version 2.0 (the "License");
- *     you may not use this file except in compliance with the License.
- *     You may obtain a copy of the License at
- *
- *         http://www.apache.org/licenses/LICENSE-2.0
- *
- *     Unless required by applicable law or agreed to in writing, software
- *     distributed under the License is distributed on an "AS IS" BASIS,
- *     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *     See the License for the specific language governing permissions and
- *     limitations under the License.
- *
- */
 package com.netflix.simianarmy.aws.janitor.crawler.edda;
 
 import com.google.common.collect.Lists;
@@ -41,35 +24,19 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
-/**
- * The crawler to crawl AWS EBS snapshots for janitor monkey using Edda.
- */
 public class EddaEBSSnapshotJanitorCrawler implements JanitorCrawler {
 
-    /** The Constant LOGGER. */
     private static final Logger LOGGER = LoggerFactory.getLogger(EddaEBSSnapshotJanitorCrawler.class);
 
-    /** The name representing the additional field name of AMIs generated using the snapshot. */
     public static final String SNAPSHOT_FIELD_AMIS = "AMIs";
 
 
-    /** The map from snapshot id to the AMI ids that are generated using the snapshot. */
     private final Map<String, Collection<String>> snapshotToAMIs = Maps.newHashMap();
 
     private final EddaClient eddaClient;
     private final List<String> regions = Lists.newArrayList();
     private final String defaultOwnerId;
 
-    /**
-     * The constructor.
-     * @param defaultOwnerId
-     *            the default owner id that snapshots need to have for being crawled, null means no filtering is
-     *            needed
-     * @param eddaClient
-     *            the Edda client
-     * @param regions
-     *            the regions the crawler will crawl resources for
-     */
     public EddaEBSSnapshotJanitorCrawler(String defaultOwnerId, EddaClient eddaClient, String... regions) {
         this.defaultOwnerId = defaultOwnerId;
         Validate.notNull(eddaClient);
@@ -133,7 +100,6 @@ public class EddaEBSSnapshotJanitorCrawler implements JanitorCrawler {
         List<Resource> resources = Lists.newArrayList();
         for (Iterator<JsonNode> it = jsonNode.getElements(); it.hasNext();) {
             JsonNode elem = it.next();
-            // Filter out shared snapshots that do not have the specified owner id.
             String ownerId = elem.get("ownerId").getTextValue();
             if (defaultOwnerId != null && !defaultOwnerId.equals(ownerId)) {
                 LOGGER.info(String.format("Ignoring snapshotIds %s since it does not have the specified ownerId.",
@@ -184,16 +150,44 @@ public class EddaEBSSnapshotJanitorCrawler implements JanitorCrawler {
         return resource.getTag(BasicSimianArmyContext.GLOBAL_OWNER_TAGKEY);
     }
 
-    /**
-     * Gets the collection of AMIs that are created using a specific snapshot.
-     * @param snapshotId the snapshot id
-     */
     protected Collection<String> getAMIsForSnapshot(String snapshotId) {
         Collection<String> amis = snapshotToAMIs.get(snapshotId);
         if (amis != null) {
             return Collections.unmodifiableCollection(amis);
         } else {
             return Collections.emptyList();
+        }
+    }
+
+    private void jsonNodeCecking(JsonNode jsonNode){
+        for (Iterator<JsonNode> it = jsonNode.getElements(); it.hasNext();) {
+            JsonNode elem = it.next();
+            String imageId = elem.get("imageId").getTextValue();
+            JsonNode blockMappings = elem.get("blockDeviceMappings");
+            if (blockMappings == null || !blockMappings.isArray() || blockMappings.size() == 0) {
+                continue;
+            }
+            addAmis(blockMappings, imageId);
+        }
+    }
+
+    private void addAmis(JsonNode blockMappings, String imageId){
+        for (Iterator<JsonNode> blockMappingsIt = blockMappings.getElements(); blockMappingsIt.hasNext();) {
+            JsonNode blockMappingNode = blockMappingsIt.next();
+            JsonNode ebs = blockMappingNode.get("ebs");
+            if (ebs == null) {
+                continue;
+            }
+            JsonNode snapshotIdNode = ebs.get("snapshotId");
+            String snapshotId = snapshotIdNode.getTextValue();
+            LOGGER.debug(String.format("Snapshot %s is used to generate AMI %s", snapshotId, imageId));
+
+            Collection<String> amis = snapshotToAMIs.get(snapshotId);
+            if (amis == null) {
+                amis = Lists.newArrayList();
+                snapshotToAMIs.put(snapshotId, amis);
+            }
+            amis.add(imageId);
         }
     }
 
@@ -216,30 +210,6 @@ public class EddaEBSSnapshotJanitorCrawler implements JanitorCrawler {
             throw new RuntimeException(String.format("Failed to get valid document from %s, got: %s", url, jsonNode));
         }
 
-        for (Iterator<JsonNode> it = jsonNode.getElements(); it.hasNext();) {
-            JsonNode elem = it.next();
-            String imageId = elem.get("imageId").getTextValue();
-            JsonNode blockMappings = elem.get("blockDeviceMappings");
-            if (blockMappings == null || !blockMappings.isArray() || blockMappings.size() == 0) {
-                continue;
-            }
-            for (Iterator<JsonNode> blockMappingsIt = blockMappings.getElements(); blockMappingsIt.hasNext();) {
-                JsonNode blockMappingNode = blockMappingsIt.next();
-                JsonNode ebs = blockMappingNode.get("ebs");
-                if (ebs == null) {
-                    continue;
-                }
-                JsonNode snapshotIdNode = ebs.get("snapshotId");
-                String snapshotId = snapshotIdNode.getTextValue();
-                LOGGER.debug(String.format("Snapshot %s is used to generate AMI %s", snapshotId, imageId));
-
-                Collection<String> amis = snapshotToAMIs.get(snapshotId);
-                if (amis == null) {
-                    amis = Lists.newArrayList();
-                    snapshotToAMIs.put(snapshotId, amis);
-                }
-                amis.add(imageId);
-            }
-        }
+        jsonNodeCecking(jsonNode);
     }
 }
