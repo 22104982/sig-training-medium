@@ -112,24 +112,18 @@ public class BasicConformityMonkey extends ConformityMonkey {
         context().resetEventReport();
 
         if (isConformityMonkeyEnabled()) {
-            nonconformingClusters.clear();
-            conformingClusters.clear();
-            failedClusters.clear();
-            nonexistentClusters.clear();
+            cleanList();
 
             List<Cluster> clusters = crawler.clusters();
             Map<String, Set<String>> existingClusterNamesByRegion = Maps.newHashMap();
-            for (String region : regions) {
-                existingClusterNamesByRegion.put(region, new HashSet<String>());
-            }
-            for (Cluster cluster : clusters) {
-                existingClusterNamesByRegion.get(cluster.getRegion()).add(cluster.getName());
-            }
+            
+            
+            existingClusterNamesByRegion = t0(regions, existingClusterNamesByRegion);
+            existingClusterNamesByRegion = t1(clusters, existingClusterNamesByRegion);
+            
             List<Cluster> trackedClusters = clusterTracker.getAllClusters(regions.toArray(new String[regions.size()]));
             for (Cluster trackedCluster : trackedClusters) {
-                if (!existingClusterNamesByRegion.get(trackedCluster.getRegion()).contains(trackedCluster.getName())) {
-                    addCluster(nonexistentClusters, trackedCluster);
-                }
+                testTest();
             }
             for (String region : regions) {
                 Collection<Cluster> toDelete = nonexistentClusters.get(region);
@@ -139,34 +133,9 @@ public class BasicConformityMonkey extends ConformityMonkey {
             }
 
             LOGGER.info(String.format("Performing conformity check for %d crawled clusters.", clusters.size()));
-            Date now = calendar.now().getTime();
+            
             for (Cluster cluster : clusters) {
-                boolean conforming;
-                try {
-                    conforming = ruleEngine.check(cluster);
-                } catch (Exception e) {
-                    LOGGER.error(String.format("Failed to perform conformity check for cluster %s", cluster.getName()),
-                            e);
-                    addCluster(failedClusters, cluster);
-                    continue;
-                }
-                cluster.setUpdateTime(now);
-                cluster.setConforming(conforming);
-                if (conforming) {
-                    LOGGER.info(String.format("Cluster %s is conforming", cluster.getName()));
-                    addCluster(conformingClusters, cluster);
-                } else {
-                    LOGGER.info(String.format("Cluster %s is not conforming", cluster.getName()));
-                    addCluster(nonconformingClusters, cluster);
-                }
-                if (!leashed) {
-                    LOGGER.info(String.format("Saving cluster %s", cluster.getName()));
-                    clusterTracker.addOrUpdate(cluster);
-                } else {
-                    LOGGER.info(String.format(
-                            "The conformity monkey is leashed, no data change is made for cluster %s.",
-                            cluster.getName()));
-                }
+                t3(cluster);
             }
             if (!leashed) {
                 emailNotifier.sendNotifications();
@@ -178,6 +147,58 @@ public class BasicConformityMonkey extends ConformityMonkey {
             }
         }
     }
+	protected void testTest(Cluster trackedCluster) {
+		if (!existingClusterNamesByRegion.get(trackedCluster.getRegion()).contains(trackedCluster.getName())) {
+            addCluster(nonexistentClusters, trackedCluster);
+        }
+	}
+	protected void cleanList() {
+		nonconformingClusters.clear();
+        conformingClusters.clear();
+        failedClusters.clear();
+        nonexistentClusters.clear();
+	}
+	protected void t3(Cluster cluster, List<Cluster> conformingClusters, List<Cluster> nonconformingClusters, List<Cluster> failedClusters) {
+		Date now = calendar.now().getTime();
+		boolean conforming;
+        try {
+            conforming = ruleEngine.check(cluster);
+        } catch (Exception e) {
+            LOGGER.error(String.format("Failed to perform conformity check for cluster %s", cluster.getName()),
+                    e);
+            addCluster(failedClusters, cluster);
+            continue;
+        }
+        cluster.setUpdateTime(now);
+        cluster.setConforming(conforming);
+        if (conforming) {
+            LOGGER.info(String.format("Cluster %s is conforming", cluster.getName()));
+            addCluster(conformingClusters, cluster);
+        } else {
+            LOGGER.info(String.format("Cluster %s is not conforming", cluster.getName()));
+            addCluster(nonconformingClusters, cluster);
+        }
+        if (!leashed) {
+            LOGGER.info(String.format("Saving cluster %s", cluster.getName()));
+            clusterTracker.addOrUpdate(cluster);
+        } else {
+            LOGGER.info(String.format(
+                    "The conformity monkey is leashed, no data change is made for cluster %s.",
+                    cluster.getName()));
+        }
+	}
+	protected Map<String, Set<String>> t0(List<String> regions, Map<String, Set<String>> existingClusterNamesByRegion) {
+		for (String region : regions) {
+            existingClusterNamesByRegion.put(region, new HashSet<String>());
+        }
+		return existingClusterNamesByRegion;
+	}
+	protected Map<String, Set<String>> t1(List<Cluster> clusters, Map<String, Set<String>> existingClusterNamesByRegion) {
+		for (Cluster cluster : clusters) {
+			existingClusterNamesByRegion.get(cluster.getRegion()).add(cluster.getName());
+		}
+		return existingClusterNamesByRegion;
+	}
 
     private static void addCluster(Map<String, Collection<Cluster>> map, Cluster cluster) {
         Collection<Cluster> clusters = map.get(cluster.getRegion());

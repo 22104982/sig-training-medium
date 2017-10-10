@@ -72,6 +72,27 @@ public class DeleteOnTerminationRule implements Rule {
         this.retentionDays = retentionDays;
     }
 
+
+    private boolean baru(){
+        String janitorTag = resource.getTag(JanitorMonkey.JANITOR_TAG);
+        if (janitorTag != null) {
+            if ("donotmark".equals(janitorTag)) {
+                LOGGER.info(String.format("The volume %s is tagged as not handled by Janitor",
+                        resource.getId()));
+                return true;
+            }
+            try {
+                Date userSpecifiedDate = new Date(
+                        TERMINATION_DATE_FORMATTER.parseDateTime(janitorTag).getMillis());
+                resource.setExpectedTerminationTime(userSpecifiedDate);
+                resource.setTerminationReason(String.format("User specified termination date %s", janitorTag));
+                return false;
+            } catch (Exception e) {
+                LOGGER.error(String.format("The janitor tag is not a user specified date: %s", janitorTag));
+            }
+        }
+    }
+
     @Override
     public boolean isValid(Resource resource) {
         Validate.notNull(resource);
@@ -83,24 +104,7 @@ public class DeleteOnTerminationRule implements Rule {
         if (!"available".equals(((AWSResource) resource).getAWSResourceState())) {
             return true;
         }
-        String janitorTag = resource.getTag(JanitorMonkey.JANITOR_TAG);
-        if (janitorTag != null) {
-            if ("donotmark".equals(janitorTag)) {
-                LOGGER.info(String.format("The volume %s is tagged as not handled by Janitor",
-                        resource.getId()));
-                return true;
-            }
-            try {
-                // Owners can tag the volume with a termination date in the "janitor" tag.
-                Date userSpecifiedDate = new Date(
-                        TERMINATION_DATE_FORMATTER.parseDateTime(janitorTag).getMillis());
-                resource.setExpectedTerminationTime(userSpecifiedDate);
-                resource.setTerminationReason(String.format("User specified termination date %s", janitorTag));
-                return false;
-            } catch (Exception e) {
-                LOGGER.error(String.format("The janitor tag is not a user specified date: %s", janitorTag));
-            }
-        }
+        baru();
 
         if ("true".equals(resource.getAdditionalField(EddaEBSVolumeJanitorCrawler.DELETE_ON_TERMINATION))) {
             if (resource.getExpectedTerminationTime() == null) {

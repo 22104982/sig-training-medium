@@ -239,7 +239,18 @@ public class RDSJanitorResourceTracker implements JanitorResourceTracker {
 			}
 			map.put(AWSResource.FIELD_OWNER_EMAIL, email);
 
-    		String expectedTerminationTime = millisToFormattedDate(rs.getString(AWSResource.FIELD_EXPECTED_TERMINATION_TIME));
+    		resource = AWSResource.parseFieldtoValueMap(map);
+    	}catch(IOException ie) {
+    		String msg = "Error parsing resource from result set";
+    		LOGGER.error(msg, ie);
+    		throw new SQLException(msg);
+    	}    	
+        return resource;
+    }
+
+	private Void condition(Resulset rs){
+			
+			String expectedTerminationTime = millisToFormattedDate(rs.getString(AWSResource.FIELD_EXPECTED_TERMINATION_TIME));
     		String actualTerminationTime = millisToFormattedDate(rs.getString(AWSResource.FIELD_ACTUAL_TERMINATION_TIME));
 			String notificationTime = millisToFormattedDate(rs.getString(AWSResource.FIELD_NOTIFICATION_TIME));
     		String launchTime = millisToFormattedDate(rs.getString(AWSResource.FIELD_LAUNCH_TIME));
@@ -260,16 +271,8 @@ public class RDSJanitorResourceTracker implements JanitorResourceTracker {
     		if (markTime != null) {
     			map.put(AWSResource.FIELD_MARK_TIME, markTime);
     		}
-
-    		resource = AWSResource.parseFieldtoValueMap(map);
-    	}catch(IOException ie) {
-    		String msg = "Error parsing resource from result set";
-    		LOGGER.error(msg, ie);
-    		throw new SQLException(msg);
-    	}    	
-        return resource;
-    }
-
+	}
+	
 	private String millisToFormattedDate(String millisStr) {
 		String datetime = null;
 		try {

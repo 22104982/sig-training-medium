@@ -174,7 +174,19 @@ public class EddaASGJanitorCrawler implements JanitorCrawler {
                 .withResourceType(AWSResourceType.ASG)
                 .withLaunchTime(new Date(createdTime));
 
-        JsonNode tags = jsonNode.get("tags");
+        resource = t1(resource, jsonNode);
+        resource = t2(resource, jsonNode);
+        resource = t3(resource, jsonNode);
+        
+        Long lastChangeTime = regionToAsgToLastChangeTime.get(region).get(asgName);
+        if (lastChangeTime != null) {
+            resource.setAdditionalField(ASG_FIELD_LAST_CHANGE_TIME, String.valueOf(lastChangeTime));
+        }
+        return resource;
+
+    }
+	protected Resource t1(Resource resource, JsonNode jsonNode) {
+		JsonNode tags = jsonNode.get("tags");
         if (tags == null || !tags.isArray() || tags.size() == 0) {
             LOGGER.debug(String.format("No tags is found for %s", resource.getId()));
         } else {
@@ -185,8 +197,10 @@ public class EddaASGJanitorCrawler implements JanitorCrawler {
                 resource.setTag(key, value);
             }
         }
-
-        String owner = getOwnerEmailForResource(resource);
+        return resource;
+	}
+	protected Resource t2(Resource resource, JsonNode jsonNode) {
+		String owner = getOwnerEmailForResource(resource);
         if (owner != null) {
             resource.setOwnerEmail(owner);
         }
@@ -208,8 +222,10 @@ public class EddaASGJanitorCrawler implements JanitorCrawler {
             elbNames.add(it.next().getTextValue());
         }
         resource.setAdditionalField(ASG_FIELD_ELBS, StringUtils.join(elbNames, ","));
-
-        JsonNode lc = jsonNode.get("launchConfigurationName");
+        return resource;
+	}
+	protected Resource t3(Resource resource, JsonNode jsonNode) {
+		JsonNode lc = jsonNode.get("launchConfigurationName");
         if (lc != null) {
             String lcName = lc.getTextValue();
             Long lcCreationTime = lcNameToCreationTime.get(lcName);
@@ -234,13 +250,8 @@ public class EddaASGJanitorCrawler implements JanitorCrawler {
                 }
             }
         }
-        Long lastChangeTime = regionToAsgToLastChangeTime.get(region).get(asgName);
-        if (lastChangeTime != null) {
-            resource.setAdditionalField(ASG_FIELD_LAST_CHANGE_TIME, String.valueOf(lastChangeTime));
-        }
         return resource;
-
-    }
+	}
 
     private Map<String, Long> getLaunchConfigCreationTimes(String region) {
         LOGGER.info(String.format("Getting launch configuration creation times in region %s", region));

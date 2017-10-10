@@ -83,18 +83,36 @@ public class OrphanedInstanceRule implements Rule {
         this.respectOpsWorksParentage = respectOpsWorksParentage;
     }
     
-    public OrphanedInstanceRule(MonkeyCalendar calendar,
-            int instanceAgeThreshold, int retentionDaysWithOwner, int retentionDaysWithoutOwner) {
+    public OrphanedInstanceRule(MonkeyCalendar calendar, int instanceAgeThreshold, int retentionDaysWithOwner, int retentionDaysWithoutOwner) {
         this(calendar, instanceAgeThreshold, retentionDaysWithOwner, retentionDaysWithoutOwner, false);
+    }
+
+    public Boolean timeValidation(Resource resource){
+        DateTime launchTime = new DateTime(resource.getLaunchTime().getTime());
+        DateTime now = new DateTime(calendar.now().getTimeInMillis());
+        if (now.isBefore(launchTime.plusDays(instanceAgeThreshold))) {
+            LOGGER.info(String.format("The orphaned instance %s has not launched for more than %d days",
+                    resource.getId(), instanceAgeThreshold));
+            return true;
+        }
+        LOGGER.info(String.format("The orphaned instance %s has launched for more than %d days",
+                resource.getId(), instanceAgeThreshold));
+        if (resource.getExpectedTerminationTime() == null) {
+            int retentionDays = retentionDaysWithoutOwner;
+            if (resource.getOwnerEmail() != null) {
+                retentionDays = retentionDaysWithOwner;
+            }
+            Date terminationTime = calendar.getBusinessDay(new Date(now.getMillis()), retentionDays);
+            resource.setExpectedTerminationTime(terminationTime);
+            resource.setTerminationReason((respectOpsWorksParentage) ? ASG_OR_OPSWORKS_TERMINATION_REASON : TERMINATION_REASON);
+        }
+        return false;
     }
 
     @Override
     public boolean isValid(Resource resource) {
         Validate.notNull(resource);
         if (!resource.getResourceType().name().equals("INSTANCE")) {
-            // The rule is supposed to only work on AWS instances. If a non-instance resource
-            // is passed to the rule, the rule simply ignores it and considers it as a valid
-            // resource not for cleanup.
             return true;
         }
         String awsStatus = ((AWSResource) resource).getAWSResourceState();
@@ -104,31 +122,13 @@ public class OrphanedInstanceRule implements Rule {
         AWSResource instanceResource = (AWSResource) resource;
         String asgName = instanceResource.getAdditionalField(InstanceJanitorCrawler.INSTANCE_FIELD_ASG_NAME);
         String opsworkStackName = instanceResource.getAdditionalField(InstanceJanitorCrawler.INSTANCE_FIELD_OPSWORKS_STACK_NAME);
-        // If there is no ASG AND it isn't an OpsWorks stack (or OpsWorks isn't respected as a parent), we have an orphan
+
         if (StringUtils.isEmpty(asgName) && (!respectOpsWorksParentage || StringUtils.isEmpty(opsworkStackName))) {
             if (resource.getLaunchTime() == null) {
                 LOGGER.error(String.format("The instance %s has no launch time.", resource.getId()));
                 return true;
             } else {
-                DateTime launchTime = new DateTime(resource.getLaunchTime().getTime());
-                DateTime now = new DateTime(calendar.now().getTimeInMillis());
-                if (now.isBefore(launchTime.plusDays(instanceAgeThreshold))) {
-                    LOGGER.info(String.format("The orphaned instance %s has not launched for more than %d days",
-                            resource.getId(), instanceAgeThreshold));
-                    return true;
-                }
-                LOGGER.info(String.format("The orphaned instance %s has launched for more than %d days",
-                        resource.getId(), instanceAgeThreshold));
-                if (resource.getExpectedTerminationTime() == null) {
-                    int retentionDays = retentionDaysWithoutOwner;
-                    if (resource.getOwnerEmail() != null) {
-                        retentionDays = retentionDaysWithOwner;
-                    }
-                    Date terminationTime = calendar.getBusinessDay(new Date(now.getMillis()), retentionDays);
-                    resource.setExpectedTerminationTime(terminationTime);
-                    resource.setTerminationReason((respectOpsWorksParentage) ? ASG_OR_OPSWORKS_TERMINATION_REASON : TERMINATION_REASON);
-                }
-                return false;
+                timeValidation(resource);
             }
         }
         return true;

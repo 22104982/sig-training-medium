@@ -83,24 +83,10 @@ public class OldDetachedVolumeRule implements Rule {
         if (!"available".equals(((AWSResource) resource).getAWSResourceState())) {
             return true;
         }
-        String janitorTag = resource.getTag(JanitorMonkey.JANITOR_TAG);
-        if (janitorTag != null) {
-            if ("donotmark".equals(janitorTag)) {
-                LOGGER.info(String.format("The volume %s is tagged as not handled by Janitor",
-                        resource.getId()));
-                return true;
-            }
-            try {
-                // Owners can tag the volume with a termination date in the "janitor" tag.
-                Date userSpecifiedDate = new Date(
-                        TERMINATION_DATE_FORMATTER.parseDateTime(janitorTag).getMillis());
-                resource.setExpectedTerminationTime(userSpecifiedDate);
-                resource.setTerminationReason(String.format("User specified termination date %s", janitorTag));
-                return false;
-            } catch (Exception e) {
-                LOGGER.error(String.format("The janitor tag is not a user specified date: %s", janitorTag));
-            }
-        }
+
+        DeleteOnTerminationRule dtr = new DeleteOnTerminationRule();
+        dtr.baru();
+
 
         String janitorMetaTag = resource.getTag(JanitorMonkey.JANITOR_META_TAG);
         if (janitorMetaTag == null) {
